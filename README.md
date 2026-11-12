@@ -57,3 +57,6 @@ Version 9: Korrektur der inversen Zielwert-zu-Datum-Prognose.
 - Alternativ robustes Ensemble aus exponentiellen und Gompertz-Sättigungskurven mit Huber-Verlust, BIA-Messfehlerannahmen und Regularisierung.
 - Schattierte heuristische Prognosebandbreiten und Zielwert→Datum mit möglichem Zeitfenster.
 - Keine statistisch kalibrierten Konfidenzintervalle; nur drei Ausgangsmessungen sind für eine individuelle Prognose unzureichend.
+
+## Version 11
+Entfernt die Prognosebandbreiten aus Diagramm und Rechner. Beide Modelle können per Checkbox im selben Diagramm überlagert werden: gewähltes Modell gestrichelt, Vergleichsmodell gepunktet. Die Modellauswahl bleibt für Tabelle und Zielwert-Rechner maßgeblich.
