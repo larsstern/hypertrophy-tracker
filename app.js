@@ -31,10 +31,14 @@ const trainingBetween=(a,b)=>Math.max(0,countAt(b.date)-countAt(a.date));
 function fit(key){
  const available=ms.filter(m=>value(m,key)!=null);
  if(key==='fat'||available.length<2)return null;
- const a=available.at(-2),b=available.at(-1),n=trainingBetween(a,b);
+ // Use the full observation window rather than just the last two rounded readings.
+ // A flat last pair at 0.1 kg resolution does not imply zero underlying growth.
+ const a=available[0],b=available.at(-1),n=trainingBetween(a,b);
  const va=value(a,key),vb=value(b,key);
- const cap=key==='ffmi'?+db.ceiling:vb+Math.max(0.1,(vb-va)*5);
- if(!(n>0&&vb>va&&cap>vb))return null;
+ const gain=vb-va;
+ if(!(n>0&&gain>0))return null;
+ const cap=key==='ffmi'?+db.ceiling:vb+Math.max(0.1,gain*5);
+ if(!(cap>vb))return null;
  const rate=-Math.log((cap-vb)/(cap-va))/n;
  return {a,b,n,cap,predict:u=>cap-(cap-va)*Math.exp(-rate*u)};
 }
@@ -67,7 +71,7 @@ svg+=`<text x="${width/2}" y="${height-5}" text-anchor="middle" class="chart-lab
 $('chart').innerHTML=selected.length?svg:'<p>Wähle mindestens eine Datenreihe aus.</p>';
 $('legend').innerHTML=selected.map(key=>`<span style="--c:${colors[key]}">${names[key]} (${key==='fat'?'%':key==='ffmi'?'Index':'kg'})</span>`).join('');
 $('ceiling').value=db.ceiling;$('horizon').value=db.horizon;
-$('scenario').innerHTML='<p class="foot">Gestrichelte Kurven: exponentielle Szenarien. Für SMM und Körperregionen wird ein <b>frei angenommener</b> Grenzwert von fünfmal dem zuletzt gemessenen Zuwachs über dem aktuellen Wert verwendet. Keine biologische Obergrenze. Jede Reihe wird separat angepasst; ihre Prognosen sind nicht zwingend additiv.</p>';
+$('scenario').innerHTML='<p class="foot">Gestrichelte Kurven: exponentielle Szenarien anhand des gesamten Messzeitraums. Gleiche aufeinanderfolgende Werte können durch Rundung entstehen. Für SMM und Körperregionen wird ein <b>frei angenommener</b> Grenzwert von fünfmal dem Zuwachs zwischen erster und letzter verfügbarer Messung über dem aktuellen Wert verwendet. Keine biologische Obergrenze. Jede Reihe wird separat angepasst; ihre Prognosen sind nicht zwingend additiv.</p>';
 const horizons=[0,20,50,100].filter(n=>n<=db.horizon);
 $('forecastTable').innerHTML=`<h2>Gemeinsame Prognosetabelle</h2><div class="table-scroll"><table><thead><tr><th>Zusätzliche Einheiten</th><th>Datum*</th>${selected.map(k=>`<th>${names[k]}${k==='fat'?' (%)':k==='ffmi'?'':' (kg)'}</th>`).join('')}</tr></thead><tbody>${horizons.map(n=>`<tr><td>+${n}</td><td>${freq>0?(()=>{const d=new Date(lastDate+'T12:00:00');d.setDate(d.getDate()+n/freq*7);return d.toLocaleDateString('de-DE')})():'–'}</td>${selected.map(k=>{const f=fits[k];const v=n===0?value(ms.at(-1),k):f?f.predict(f.n+n):null;return `<td>${n>0&&k==='fat'?'–':v==null?'–':fmt(v,k==='fat'?1:2)}</td>`}).join('')}</tr>`).join('')}</tbody></table></div><p class="foot">*Datum aus ${freq} Einheiten/Woche, ab letzter Messung. „–“ bedeutet: keine Prognose möglich oder ausdrücklich ausgeschlossen. Unterschiedliche Skalen teilen sich im Diagramm eine numerische Y-Achse; für präzise Vergleiche einzelne Reihen auswählen.</p>`;
 $('segments').innerHTML=last&&last.smm!=null?`<p><b>${fmt(last.smm,1)} kg</b> Skelettmuskelmasse (geschätzt)</p><div class="grid">${[['Torso','torso'],['Arm rechts','armR'],['Arm links','armL'],['Bein rechts','legR'],['Bein links','legL']].map(([label,key])=>`<div class="stat"><small>${label}</small><strong>${last[key]==null?'–':fmt(last[key],1)+' kg'}</strong></div>`).join('')}</div>`:'<p>Für die neueste Messung sind keine segmentalen Werte hinterlegt.</p>';

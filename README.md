@@ -29,3 +29,6 @@ Mehrfachauswahl von FFMI, Gesamt-SMM, Torso, beiden Armen, beiden Beinen und KFA
 - Historische SMM-Werte ergänzt: 03.08. 33,9 kg (Torso 16,3; Arme je 2,2; Beine je 6,6), 24.08. 34,5 kg (Torso 16,7; Arme je 2,3; Beine je 6,6).
 - Automatische Y-Achsen-Skalierung anhand der ausgewählten Reihen und Prognosen, ohne erzwungenen Nullpunkt.
 - Vorhandene lokale Datensätze werden bei fehlenden historischen Segmentfeldern ergänzt, ohne vorhandene Eingaben zu überschreiben.
+
+## Version 4
+Prognosekalibrierung verwendet die erste und letzte verfügbare Messung statt nur der letzten beiden. Damit verhindert eine durch Rundung bedingte Plateau-Messung nicht automatisch die Prognose. Bei insgesamt null oder negativem Trend bleibt die Prognose deaktiviert.
