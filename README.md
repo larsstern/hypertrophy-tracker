@@ -60,3 +60,8 @@ Version 9: Korrektur der inversen Zielwert-zu-Datum-Prognose.
 
 ## Version 11
 Entfernt die Prognosebandbreiten aus Diagramm und Rechner. Beide Modelle können per Checkbox im selben Diagramm überlagert werden: gewähltes Modell gestrichelt, Vergleichsmodell gepunktet. Die Modellauswahl bleibt für Tabelle und Zielwert-Rechner maßgeblich.
+
+## v12 Mobile- und Overlay-Fix
+- Checkbox mit fester Breite und sichtbarer Beschriftung; verhindert die 100%-Breite des allgemeinen Input-Stils.
+- Datumseingabe und Grid-Zellen sind auf kleinen Bildschirmen auf die verfügbare Spaltenbreite begrenzt.
+- Cache-Version erhöht und HTML/JavaScript werden online netzwerkpriorisiert aktualisiert; offline bleibt die App verfügbar.
