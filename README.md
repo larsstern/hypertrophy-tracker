@@ -51,3 +51,9 @@ Alle Messungen können über 'Bearbeiten' in der Messhistorie nachträglich geä
 - Keine Prognose für Körperfettanteil.
 
 Version 9: Korrektur der inversen Zielwert-zu-Datum-Prognose.
+
+## v10: Modellwahl
+- Bestehender exponentieller Sättigungsfit bleibt auswählbar.
+- Alternativ robustes Ensemble aus exponentiellen und Gompertz-Sättigungskurven mit Huber-Verlust, BIA-Messfehlerannahmen und Regularisierung.
+- Schattierte heuristische Prognosebandbreiten und Zielwert→Datum mit möglichem Zeitfenster.
+- Keine statistisch kalibrierten Konfidenzintervalle; nur drei Ausgangsmessungen sind für eine individuelle Prognose unzureichend.

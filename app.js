@@ -1,4 +1,4 @@
-'use strict';const KEY='hypertrophy-tracker-v1';const seed=()=>({height:190,baseBefore:11,baseAfter:20,ceiling:23,horizon:160,frequency:5,xMode:'sessions',selected:['ffmi','smm','torso','armR','armL','legR','legL','fat'],measurements:[{id:'m1',date:'2026-08-03',session:0,weight:79,fat:17.2,smm:33.9,torso:16.3,armR:2.2,armL:2.2,legR:6.6,legL:6.6,note:'MeScan'},{id:'m2',date:'2026-08-24',session:11,weight:80.7,fat:11.9,smm:34.5,torso:16.7,armR:2.3,armL:2.3,legR:6.6,legL:6.6,note:'MeScan'},{id:'m3',date:'2026-11-11',session:31,weight:84.7,fat:15,smm:35.2,torso:16.7,armR:2.3,armL:2.4,legR:6.9,legL:6.9,note:'MeScan'}],trainings:[]});let db;try{db=JSON.parse(localStorage.getItem(KEY))||seed()}catch{db=seed()}// Upgrade only missing historic segment data; never overwrite user-entered values.
+'use strict';const KEY='hypertrophy-tracker-v1';const seed=()=>({height:190,baseBefore:11,baseAfter:20,ceiling:23,horizon:160,frequency:5,xMode:'sessions',fitMode:'simple',selected:['ffmi','smm','torso','armR','armL','legR','legL','fat'],measurements:[{id:'m1',date:'2026-08-03',session:0,weight:79,fat:17.2,smm:33.9,torso:16.3,armR:2.2,armL:2.2,legR:6.6,legL:6.6,note:'MeScan'},{id:'m2',date:'2026-08-24',session:11,weight:80.7,fat:11.9,smm:34.5,torso:16.7,armR:2.3,armL:2.3,legR:6.6,legL:6.6,note:'MeScan'},{id:'m3',date:'2026-11-11',session:31,weight:84.7,fat:15,smm:35.2,torso:16.7,armR:2.3,armL:2.4,legR:6.9,legL:6.9,note:'MeScan'}],trainings:[]});let db;try{db=JSON.parse(localStorage.getItem(KEY))||seed()}catch{db=seed()}// Upgrade only missing historic segment data; never overwrite user-entered values.
 for(const m of db.measurements||[]){
  const historic=seed().measurements.find(x=>x.date===m.date);
  if(historic){if(m.session==null)m.session=historic.session;for(const field of ['smm','torso','armR','armL','legR','legL'])
@@ -24,10 +24,10 @@ const origin=new Date(ms[0]?.date||'2026-08-03'+'T12:00:00');
 const days=(a,b)=>(new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/86400000;
 const lastDate=ms.at(-1)?.date||'2026-11-11';
 const sessionOf=m=>Number.isInteger(+m.session)&&m.session!==''&&m.session!=null?+m.session:countAt(m.date);
-const lastN=sessionOf(ms.at(-1)), maxN=lastN+db.horizon;
+const lastN=last?sessionOf(last):0, maxN=lastN+db.horizon;
 const totalDays=Math.max(1,days(lastDate,ms[0]?.date||lastDate)+(freq>0?db.horizon/freq*7:0));
-const xAt=(m)=>dateMode?days(m.date,ms[0].date)/totalDays:sessionOf(m)/Math.max(1,maxN);
-const xForecast=n=>dateMode?(days(lastDate,ms[0].date)+n/freq*7)/totalDays:(lastN+n)/Math.max(1,maxN);
+const xAt=(m)=>dateMode?days(m.date,ms[0]?.date||lastDate)/totalDays:sessionOf(m)/Math.max(1,maxN);
+const xForecast=n=>dateMode?(days(lastDate,ms[0]?.date||lastDate)+n/freq*7)/totalDays:(lastN+n)/Math.max(1,maxN);
 const trainingBetween=(a,b)=>Math.max(0,sessionOf(b)-sessionOf(a));
 function fit(key){
  const available=ms.filter(m=>value(m,key)!=null);
@@ -43,8 +43,59 @@ function fit(key){
  const rate=-Math.log((cap-vb)/(cap-va))/n;
  return {a,b,n,cap,rate,predict:u=>cap-(cap-va)*Math.exp(-rate*u)};
 }
-const fits=Object.fromEntries(keys.map(key=>[key,fit(key)]));
-const allValues=selected.flatMap(key=>ms.map(m=>value(m,key)).filter(v=>v!=null).concat(fits[key]&&(!dateMode||freq>0)?[fits[key].predict(fits[key].n+db.horizon)]:[]));
+// Robust multi-curve ensemble. Grid-search weighted Huber loss with measurement uncertainty,
+// mild prior on the plateau and model averaging. No inference of a genetic limit.
+function robustFit(key){
+ const obs=ms.map(m=>({m,x:sessionOf(m),y:value(m,key)})).filter(o=>Number.isFinite(o.y));
+ if(obs.length<3)return null;
+ const x0=obs[0].x, end=obs.at(-1), span=end.x-x0;
+ if(!(span>0))return null;
+ const ys=obs.map(o=>o.y), gain=end.y-obs[0].y;
+ if(!(gain>0))return null;
+ const noise=key==='ffmi'?0.65:key==='ffm'?2.2:key==='smm'?0.8:key==='torso'?0.5:0.22;
+ const scale=Math.max(noise,Math.abs(gain)*0.25);
+ const cap0=key==='ffmi'?Math.max(+db.ceiling,end.y+0.1):end.y+Math.max(noise,gain*5);
+ const candidates=[];
+ const huber=z=>{const v=Math.abs(z);return v<=1.5?v*v/2:1.5*v-1.125};
+ for(const kind of ['exponential','gompertz'])for(const factor of [0.65,0.8,1,1.25,1.6,2]){
+  const cap=Math.max(end.y+noise*0.5,obs[0].y+noise,cap0*factor);
+  if(cap<=Math.max(...ys))continue;
+  for(let j=0;j<34;j++){
+   const k=Math.exp(Math.log(0.0003)+j/33*Math.log(0.12/0.0003));
+   // Fit the starting level using robustly weighted least squares, with IRLS.
+   const shape=x=>kind==='exponential'?Math.exp(-k*x):Math.exp(-Math.exp(-k*x)*2);
+   let A=obs[0].y, weights=obs.map(()=>1);
+   for(let it=0;it<5;it++){
+    let num=0,den=0;
+    obs.forEach((o,i)=>{const z=shape(o.x-x0);num+=weights[i]*z*(o.y-cap*(1-z));den+=weights[i]*z*z});
+    if(den>1e-10)A=num/den;
+    obs.forEach((o,i)=>{const pred=cap+(A-cap)*shape(o.x-x0),r=Math.abs((o.y-pred)/scale);weights[i]=r>1.5?1.5/r:1});
+   }
+   if(!(A>0&&A<cap))continue;
+   const predictX=x=>cap+(A-cap)*shape(x-x0);
+   let loss=obs.reduce((v,o)=>v+huber((o.y-predictX(o.x))/scale),0);
+   // Regularize unrealistic curvature and cap; avoid overfitting three points.
+   loss+=0.35*Math.log(factor)**2+0.15*(Math.log(k*span+0.01))**2;
+   candidates.push({kind,cap,k,loss,predictX});
+  }
+ }
+ candidates.sort((a,b)=>a.loss-b.loss);
+ if(!candidates.length)return null;
+ const best=candidates[0],near=candidates.filter(c=>c.loss-best.loss<3).slice(0,90);
+ const ws=near.map(c=>Math.exp(-0.5*(c.loss-best.loss))),wsum=ws.reduce((a,b)=>a+b,0);
+ const weightedQuantile=(arr,q)=>{arr.sort((a,b)=>a.v-b.v);const total=arr.reduce((a,b)=>a+b.w,0);let cum=0;for(const a of arr){cum+=a.w;if(cum>=total*q)return a.v}return arr.at(-1).v};
+ const forecast=n=>{const x=end.x+n;const vals=near.map((c,i)=>({v:c.predictX(x),w:ws[i]}));const central=vals.reduce((t,z)=>t+z.v*z.w,0)/wsum;
+  // Widen with observational uncertainty, including possible BIA fluctuations.
+  const low=weightedQuantile(vals.map(z=>({...z,v:z.v-1.64*noise*Math.sqrt(1+n/Math.max(1,span))})),0.10);
+  const high=weightedQuantile(vals.map(z=>({...z,v:z.v+1.64*noise*Math.sqrt(1+n/Math.max(1,span))})),0.90);
+  return {central,low,high};};
+ return {a:obs[0].m,b:end.m,n:span,cap:best.cap,forecast,ensemble:near,noise,modelCount:near.length,
+  predict:u=>forecast(u-span).central};
+}
+const robust=db.fitMode==='robust';
+const fits=Object.fromEntries(keys.map(key=>[key,robust?robustFit(key):fit(key)]));
+$('fitMode').value=robust?'robust':'simple';
+const allValues=selected.flatMap(key=>ms.map(m=>value(m,key)).filter(v=>v!=null).concat(fits[key]&&(!dateMode||freq>0)?[fits[key].predict(fits[key].n+db.horizon),...(robust?[fits[key].forecast(db.horizon).low,fits[key].forecast(db.horizon).high]:[])]:[]));
 // Auto-fit the Y axis to the selected data (including forecast), with a small margin.
 const finiteValues=allValues.filter(Number.isFinite);
 const rawMin=finiteValues.length?Math.min(...finiteValues):0;
@@ -57,14 +108,15 @@ const x=v=>left+Math.max(0,Math.min(1,v))*(width-left-right);
 const y=v=>top+(1-(v-lo)/Math.max(.001,hi-lo))*(height-top-bottom);
 let svg=`<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Verlauf der ausgewählten Messgrößen">`;
 for(let i=0;i<=5;i++){let v=lo+(hi-lo)*i/5;svg+=`<line x1="${left}" x2="${width-right}" y1="${y(v)}" y2="${y(v)}" stroke="#52657d" opacity=".35"/><text class="chart-label" x="${left-7}" y="${y(v)+4}" text-anchor="end">${fmt(v,1)}</text>`;}
-for(let i=0;i<=4;i++){const ratio=i/4;let label;if(dateMode){const d=new Date(ms[0].date+'T12:00:00');d.setDate(d.getDate()+ratio*totalDays);label=d.toLocaleDateString('de-DE',{month:'2-digit',year:'2-digit'});}else label=Math.round(ratio*maxN);svg+=`<text class="chart-label" x="${x(ratio)}" y="${height-25}" text-anchor="middle">${label}</text>`;}
+for(let i=0;i<=4;i++){const ratio=i/4;let label;if(dateMode){const d=new Date((ms[0]?.date||lastDate)+'T12:00:00');d.setDate(d.getDate()+ratio*totalDays);label=d.toLocaleDateString('de-DE',{month:'2-digit',year:'2-digit'});}else label=Math.round(ratio*maxN);svg+=`<text class="chart-label" x="${x(ratio)}" y="${height-25}" text-anchor="middle">${label}</text>`;}
 for(const key of selected){
  const entries=ms.filter(m=>value(m,key)!=null);
  if(entries.length>1){svg+=`<path d="${entries.map((m,i)=>(i?'L':'M')+x(xAt(m)).toFixed(1)+' '+y(value(m,key)).toFixed(1)).join(' ')}" stroke="${colors[key]}" stroke-width="2" fill="none" opacity=".75"/>`;}
  for(const m of entries){svg+=`<circle cx="${x(xAt(m))}" cy="${y(value(m,key))}" r="4" fill="${colors[key]}"><title>${names[key]} · ${m.date}: ${fmt(value(m,key))}${key==='fat'?' %':key==='ffmi'?'':' kg'}</title></circle>`;}
  const f=fits[key];if(f&&(!dateMode||freq>0)){
+ if(robust){let upper=[],lower=[];for(let i=0;i<=db.horizon;i+=Math.max(1,Math.floor(db.horizon/60))){const pos=dateMode?(days(f.b.date,ms[0]?.date||lastDate)+i/freq*7)/totalDays:(sessionOf(f.b)+i)/maxN;const q=f.forecast(i);upper.push(x(pos).toFixed(1)+','+y(q.high).toFixed(1));lower.push(x(pos).toFixed(1)+','+y(q.low).toFixed(1));}svg+=`<polygon points="${upper.concat(lower.reverse()).join(' ')}" fill="${colors[key]}" opacity=".13"/>`;}
  let path='';const anchor=sessionOf(f.b);
- for(let i=0;i<=db.horizon;i+=Math.max(1,Math.floor(db.horizon/100))){let pos=dateMode?(days(f.b.date,ms[0].date)+i/freq*7)/totalDays:(anchor+i)/maxN;path+=(path?' L':'M')+x(pos).toFixed(1)+' '+y(f.predict(f.n+i)).toFixed(1);}
+ for(let i=0;i<=db.horizon;i+=Math.max(1,Math.floor(db.horizon/100))){let pos=dateMode?(days(f.b.date,ms[0]?.date||lastDate)+i/freq*7)/totalDays:(anchor+i)/maxN;path+=(path?' L':'M')+x(pos).toFixed(1)+' '+y(f.predict(f.n+i)).toFixed(1);}
  svg+=`<path d="${path}" stroke="${colors[key]}" stroke-width="2" stroke-dasharray="5 5" fill="none"/>`;
  }
 }
@@ -73,7 +125,7 @@ $('chart').innerHTML=selected.length?svg:'<p>Wähle mindestens eine Datenreihe a
 $('legend').innerHTML=selected.map(key=>`<span style="--c:${colors[key]}">${names[key]} (${key==='fat'?'%':key==='ffmi'?'Index':'kg'})</span>`).join('');
 $('ceiling').value=db.ceiling;$('horizon').value=db.horizon;
 renderCalculator();
-$('scenario').innerHTML='<p class="foot">Gestrichelte Kurven: exponentielle Szenarien anhand des gesamten Messzeitraums. Gleiche aufeinanderfolgende Werte können durch Rundung entstehen. Für SMM und Körperregionen wird ein <b>frei angenommener</b> Grenzwert von fünfmal dem Zuwachs zwischen erster und letzter verfügbarer Messung über dem aktuellen Wert verwendet. Keine biologische Obergrenze. Jede Reihe wird separat angepasst; ihre Prognosen sind nicht zwingend additiv.</p>';
+$('scenario').innerHTML=robust?`<p class="foot">Robuste nichtlineare Ensemble-Anpassung: Exponential- und Gompertz-Verläufe, Huber-Verlust gegen Ausreißer, angenommene BIA-Messunsicherheit und regularisierte Grenzwerte. Schattierung: <b>heuristische Unsicherheitsbandbreite</b> (kein statistisch kalibriertes 95%-Konfidenzintervall). ${ms.length<4?'Nur drei Messungen: die Prognose ist besonders unsicher.':''} Die einzelnen Reihen werden unabhängig modelliert.</p>`:'<p class="foot">Gestrichelte Kurven: exponentielle Szenarien anhand des gesamten Messzeitraums. Gleiche aufeinanderfolgende Werte können durch Rundung entstehen. Für SMM und Körperregionen wird ein <b>frei angenommener</b> Grenzwert von fünfmal dem Zuwachs zwischen erster und letzter verfügbarer Messung über dem aktuellen Wert verwendet. Keine biologische Obergrenze. Jede Reihe wird separat angepasst; ihre Prognosen sind nicht zwingend additiv.</p>';
 const horizons=[0,20,50,100].filter(n=>n<=db.horizon);
 $('forecastTable').innerHTML=`<h2>Gemeinsame Prognosetabelle</h2><div class="table-scroll"><table><thead><tr><th>Zusätzliche Einheiten</th><th>Datum*</th>${selected.map(k=>`<th>${names[k]}${k==='fat'?' (%)':k==='ffmi'?'':' (kg)'}</th>`).join('')}</tr></thead><tbody>${horizons.map(n=>`<tr><td>+${n}</td><td>${freq>0?(()=>{const d=new Date(lastDate+'T12:00:00');d.setDate(d.getDate()+n/freq*7);return d.toLocaleDateString('de-DE')})():'–'}</td>${selected.map(k=>{const f=fits[k];const v=n===0?value(ms.at(-1),k):f?f.predict(f.n+n):null;return `<td>${n>0&&k==='fat'?'–':v==null?'–':fmt(v,k==='fat'?1:2)}</td>`}).join('')}</tr>`).join('')}</tbody></table></div><p class="foot">*Datum aus ${freq} Einheiten/Woche, ab letzter Messung. „–“ bedeutet: keine Prognose möglich oder ausdrücklich ausgeschlossen. Unterschiedliche Skalen teilen sich im Diagramm eine numerische Y-Achse; für präzise Vergleiche einzelne Reihen auswählen.</p>`;
 
@@ -100,14 +152,24 @@ function updateCalculator(){
    if(!target){output.textContent='Bitte ein Datum wählen.';return;}
    const n=days(target,anchorDate)*frequency/7;
    if(n<0){output.textContent='Das Datum liegt vor der letzten Messung. Rückwärtsprognosen sind deaktiviert.';return;}
-   const prediction=f.predict(f.n+n);
-   output.innerHTML=`<strong>${names[metric]}: ${fmt(prediction,2)}${unit}</strong><br><small>Am ${formatDate(new Date(target+'T12:00:00'))} · ca. ${fmt(n,1)} zusätzliche Trainingseinheiten (${frequency}/Woche). Szenario, keine verlässliche individuelle Vorhersage.</small>`;
+   const prediction=f.predict(f.n+n);const band=robust?f.forecast(n):null;
+   output.innerHTML=`<strong>${names[metric]}: ${fmt(prediction,2)}${unit}</strong>${band?`<br><small>Modellband: ${fmt(band.low,2)}–${fmt(band.high,2)}${unit}</small>`:''}<br><small>Am ${formatDate(new Date(target+'T12:00:00'))} · ca. ${fmt(n,1)} zusätzliche Trainingseinheiten (${frequency}/Woche). Szenario, keine verlässliche individuelle Vorhersage.</small>`;
  }else{
    const target=+$('calcValue').value;
    if(!$('calcValue').value||!Number.isFinite(target)){output.textContent='Bitte einen Zielwert eingeben.';return;}
    if(target<=base){output.textContent=`Der Zielwert liegt bei oder unter dem letzten Messwert (${fmt(base,2)}${unit}). Eine zukünftige Erreichungszeit lässt sich daraus nicht ableiten.`;return;}
-   if(target>=f.cap){output.textContent=`Der Zielwert liegt bei oder über dem angenommenen Modellgrenzwert (${fmt(f.cap,2)}${unit}). In diesem Szenario wird er nicht erreicht. Der Grenzwert ist hypothetisch.`;return;}
-   const rate=f.rate;
+   if(!robust&&target>=f.cap){output.textContent=`Der Zielwert liegt bei oder über dem angenommenen Modellgrenzwert (${fmt(f.cap,2)}${unit}). In diesem Szenario wird er nicht erreicht. Der Grenzwert ist hypothetisch.`;return;}
+   if(robust){
+   const max=20000;let lo=0,hi=max;
+   if(f.forecast(max).central<target){output.textContent='Ziel im untersuchten Prognosehorizont nicht erreichbar; das Modell erlaubt keine belastbare Datumsangabe.';return;}
+   for(let i=0;i<65;i++){const mid=(lo+hi)/2;if(f.forecast(mid).central<target)lo=mid;else hi=mid;}
+   const n=(lo+hi)/2;
+   const findBound=side=>{if(f.forecast(max)[side]<target)return null;let l=0,h=max;for(let i=0;i<55;i++){let mid=(l+h)/2;if(f.forecast(mid)[side]<target)l=mid;else h=mid;}return fromSessions((l+h)/2)};
+   const earliest=findBound('high'),latest=findBound('low');
+   output.innerHTML=`<strong>Modellmitte: ${formatDate(fromSessions(n))}</strong><br><small>Ca. ${fmt(n,1)} Einheiten bei ${frequency}/Woche für ${fmt(target,2)}${unit}. Mögliches Modellfenster: ${earliest?formatDate(earliest):'offen'} bis ${latest?formatDate(latest):'offen'}. Keine kalibrierte Wahrscheinlichkeitsaussage.</small>`;
+   return;
+ }
+ const rate=f.rate;
    if(!(rate>0)){output.textContent='Die Umkehrung ist mit diesen Daten nicht berechenbar.';return;}
    const n=Math.log((f.cap-base)/(f.cap-target))/rate;
    if(!Number.isFinite(n)||n>100000){output.textContent='Das Ziel liegt zu nahe am angenommenen Grenzwert für eine sinnvolle Zeitangabe.';return;}
@@ -134,5 +196,5 @@ if(others.some(x=>x.session!=null&&(x.date<m.date&&+x.session>m.session||x.date>
 if(editingMeasurementId){const index=db.measurements.findIndex(x=>x.id===editingMeasurementId);if(index<0)return alert('Messung nicht gefunden.');db.measurements[index]=m;}else db.measurements.push(m);
 resetMeasurementForm();save();});
 document.addEventListener('click',e=>{const edit=e.target.closest('[data-edit-m]');if(edit){editMeasurement(edit.dataset.editM);return;}const del=e.target.closest('[data-delete-m]');if(del&&confirm('Messung wirklich löschen?')){db.measurements=db.measurements.filter(x=>x.id!==del.dataset.deleteM);if(editingMeasurementId===del.dataset.deleteM)resetMeasurementForm();save();}});
-$('saveSettings').onclick=()=>{const h=+$('height').value;if(h<100||h>250)return alert('Ungültige Werte');db.height=h;save()};document.addEventListener('change',e=>{if(e.target.matches('[data-series]')){db.selected=[...document.querySelectorAll('[data-series]:checked')].map(el=>el.dataset.series);save()}});$('xMode').addEventListener('change',e=>{db.xMode=e.target.value;save()});$('frequency').addEventListener('input',e=>{db.frequency=+e.target.value;save()});
+$('saveSettings').onclick=()=>{const h=+$('height').value;if(h<100||h>250)return alert('Ungültige Werte');db.height=h;save()};document.addEventListener('change',e=>{if(e.target.matches('[data-series]')){db.selected=[...document.querySelectorAll('[data-series]:checked')].map(el=>el.dataset.series);save()}});$('xMode').addEventListener('change',e=>{db.xMode=e.target.value;save()});$('fitMode').addEventListener('change',e=>{db.fitMode=e.target.value;save()});$('frequency').addEventListener('input',e=>{db.frequency=+e.target.value;save()});
 for(const id of ['calcMetric','calcMode','calcDate','calcValue'])$(id).addEventListener(id==='calcValue'?'input':'change',()=>render());for(const key of ['ceiling','horizon'])$(key).addEventListener('change',()=>{db[key]=+$(key).value;save()});$('export').onclick=()=>download('hypertrophy-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(db,null,2),'application/json');$('csv').onclick=()=>download('hypertrophy-messungen.csv','Datum,Gewicht_kg,KFA_Prozent,FFMI,Fettfreie_Masse_kg,SMM_kg\n'+sorted().map(m=>[m.date,m.weight,m.fat,ffmi(m).toFixed(3),(m.weight*(1-m.fat/100)).toFixed(3),m.smm??''].join(',')).join('\n'),'text/csv');$('import').addEventListener('change',async e=>{try{const obj=JSON.parse(await e.target.files[0].text());if(!Array.isArray(obj.measurements)||!obj.measurements.every(valid)||!(obj.height>=100&&obj.height<=250))throw Error('Ungültiges Datenformat');if(confirm('Alle lokalen Daten durch das Backup ersetzen?')){db={...seed(),...obj};save()}}catch(err){alert('Import fehlgeschlagen: '+err.message)}e.target.value=''});$('reset').onclick=()=>{if(confirm('Alle Änderungen löschen und die drei ursprünglichen Messungen wiederherstellen?')){db=seed();save()}};render();if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
