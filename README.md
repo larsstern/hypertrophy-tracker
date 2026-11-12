@@ -49,3 +49,5 @@ Alle Messungen können über 'Bearbeiten' in der Messhistorie nachträglich geä
 - Trainingsfrequenz 0–7 Einheiten/Woche aus dem vorhandenen Slider; 0 deaktiviert datumsbezogene Prognosen.
 - Die inverse Funktion weist Werte oberhalb des hypothetischen Modellgrenzwerts zurück.
 - Keine Prognose für Körperfettanteil.
+
+Version 9: Korrektur der inversen Zielwert-zu-Datum-Prognose.

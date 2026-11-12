@@ -41,7 +41,7 @@ function fit(key){
  const cap=key==='ffmi'?+db.ceiling:vb+Math.max(0.1,gain*5);
  if(!(cap>vb))return null;
  const rate=-Math.log((cap-vb)/(cap-va))/n;
- return {a,b,n,cap,predict:u=>cap-(cap-va)*Math.exp(-rate*u)};
+ return {a,b,n,cap,rate,predict:u=>cap-(cap-va)*Math.exp(-rate*u)};
 }
 const fits=Object.fromEntries(keys.map(key=>[key,fit(key)]));
 const allValues=selected.flatMap(key=>ms.map(m=>value(m,key)).filter(v=>v!=null).concat(fits[key]&&(!dateMode||freq>0)?[fits[key].predict(fits[key].n+db.horizon)]:[]));
@@ -107,9 +107,9 @@ function updateCalculator(){
    if(!$('calcValue').value||!Number.isFinite(target)){output.textContent='Bitte einen Zielwert eingeben.';return;}
    if(target<=base){output.textContent=`Der Zielwert liegt bei oder unter dem letzten Messwert (${fmt(base,2)}${unit}). Eine zukünftige Erreichungszeit lässt sich daraus nicht ableiten.`;return;}
    if(target>=f.cap){output.textContent=`Der Zielwert liegt bei oder über dem angenommenen Modellgrenzwert (${fmt(f.cap,2)}${unit}). In diesem Szenario wird er nicht erreicht. Der Grenzwert ist hypothetisch.`;return;}
-   const rate=-Math.log((f.cap-value(f.a,metric))/(f.cap-base))/f.n;
+   const rate=f.rate;
    if(!(rate>0)){output.textContent='Die Umkehrung ist mit diesen Daten nicht berechenbar.';return;}
-   const n=-Math.log((f.cap-target)/(f.cap-base))/rate;
+   const n=Math.log((f.cap-base)/(f.cap-target))/rate;
    if(!Number.isFinite(n)||n>100000){output.textContent='Das Ziel liegt zu nahe am angenommenen Grenzwert für eine sinnvolle Zeitangabe.';return;}
    const when=fromSessions(n);
    output.innerHTML=`<strong>Rechnerisch: ${formatDate(when)}</strong><br><small>Ca. ${fmt(n,1)} weitere Trainingseinheiten bei ${frequency}/Woche, um ${fmt(target,2)}${unit} zu erreichen. Nur Modell-Szenario; reale Fortschritte können erheblich abweichen.</small>`;
