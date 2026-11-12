@@ -32,3 +32,12 @@ Mehrfachauswahl von FFMI, Gesamt-SMM, Torso, beiden Armen, beiden Beinen und KFA
 
 ## Version 4
 Prognosekalibrierung verwendet die erste und letzte verfügbare Messung statt nur der letzten beiden. Damit verhindert eine durch Rundung bedingte Plateau-Messung nicht automatisch die Prognose. Bei insgesamt null oder negativem Trend bleibt die Prognose deaktiviert.
+
+## Version 5
+Messungen erhalten eine kumulative Trainingseinheitsnummer (0 = Ausgangspunkt). Historische Messungen: 0, 11, 31. Das Diagramm und die Prognose nutzen diese Nummern vorrangig; ältere Backups werden ergänzt.
+
+## Version 6
+Trainingstagebuch und Training-Reiter entfernt. Kumulative Trainingseinheiten werden ausschließlich bei jeder Messung erfasst. Bestehende Messungen und Daten bleiben erhalten.
+
+## Version 7
+Alle Messungen können über 'Bearbeiten' in der Messhistorie nachträglich geändert werden (Datum, Einheitsnummer, Gewicht, KFA, Muskelmassen, Notiz). Speichern ersetzt den bestehenden Eintrag unter Beibehaltung der ID; Abbrechen verwirft Änderungen. Datum-Duplikate und unplausible Einheitsreihenfolge werden abgefangen.
