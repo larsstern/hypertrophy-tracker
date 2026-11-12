@@ -41,3 +41,11 @@ Trainingstagebuch und Training-Reiter entfernt. Kumulative Trainingseinheiten we
 
 ## Version 7
 Alle Messungen können über 'Bearbeiten' in der Messhistorie nachträglich geändert werden (Datum, Einheitsnummer, Gewicht, KFA, Muskelmassen, Notiz). Speichern ersetzt den bestehenden Eintrag unter Beibehaltung der ID; Abbrechen verwirft Änderungen. Datum-Duplikate und unplausible Einheitsreihenfolge werden abgefangen.
+
+
+## Version 8
+- Fettfreie Masse in kg als zusätzliche Datenreihe in Diagramm und Prognosetabelle (aus Gewicht und KFA berechnet).
+- Prognoserechner: Datum zu FFMI/FFM/SMM/Segmentwert und Zielwert zu rechnerischem Datum.
+- Trainingsfrequenz 0–7 Einheiten/Woche aus dem vorhandenen Slider; 0 deaktiviert datumsbezogene Prognosen.
+- Die inverse Funktion weist Werte oberhalb des hypothetischen Modellgrenzwerts zurück.
+- Keine Prognose für Körperfettanteil.

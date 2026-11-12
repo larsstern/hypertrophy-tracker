@@ -8,10 +8,10 @@ let editingMeasurementId=null;const $=id=>document.getElementById(id),fmt=(v,d=2
 function trainingCountAfter(date){let base=date>='2026-11-11'?db.baseAfter:date>='2026-08-24'?0:0;return base+db.trainings.filter(t=>t.date>'2026-08-24'&&t.date<=date).length}function model(){const ms=sorted();if(ms.length<2)return null;const a=ms[ms.length-2],b=ms[ms.length-1];let n=db.trainings.filter(t=>t.date>a.date&&t.date<=b.date).length;if(a.date==='2026-08-24'&&b.date==='2026-11-11')n+=db.baseAfter;else if(a.date==='2026-08-03'&&b.date==='2026-08-24')n+=db.baseBefore;else if(a.date==='2026-08-03'&&b.date==='2026-11-11')n+=db.baseBefore+db.baseAfter;else if(a.date==='2026-11-11')n+=db.trainings.filter(t=>t.date>'2026-11-11'&&t.date<=b.date).length;const x=ffmi(a),y=ffmi(b),L=db.ceiling;if(!(n>0&&y>x&&L>y))return {a,b,n,x,y,usable:false};const k=-Math.log((L-y)/(L-x))/n;return {a,b,n,x,y,k,usable:true,predict:u=>L-(L-x)*Math.exp(-k*u)}}
 function render(){const ms=sorted(),last=ms.at(-1),first=ms[0],count=last?.session??0;if(last){$('stats').innerHTML=`<div class="stat"><small>Aktueller FFMI</small><strong class="accent">${fmt(ffmi(last))}</strong><small>${escapeHtml(last.date)}</small></div><div class="stat"><small>Trainingseinheiten</small><strong>${count}</strong><small>Kumuliert laut letzter Messung</small></div><div class="stat"><small>Gewicht</small><strong>${fmt(last.weight,1)} kg</strong><small>KFA ${fmt(last.fat,1)} %</small></div><div class="stat"><small>Fettfreie Masse</small><strong>${fmt(last.weight*(1-last.fat/100),1)} kg</strong><small>BIA-Schätzung</small></div>`}else $('stats').innerHTML='<p>Bitte Messung hinzufügen.</p>';
 
-const keys=['ffmi','smm','torso','armR','armL','legR','legL','fat'];
-const names={ffmi:'FFMI',smm:'Gesamt-SMM',torso:'Torso',armR:'Arm rechts',armL:'Arm links',legR:'Bein rechts',legL:'Bein links',fat:'KFA'};
-const colors={ffmi:'#5ce0a0',smm:'#65a9ff',torso:'#d4a6ff',armR:'#ffbd69',armL:'#f48fb1',legR:'#5cd7d0',legL:'#d3dd70',fat:'#fa7c7c'};
-const value=(m,key)=>key==='ffmi'?ffmi(m):key==='fat'?m.fat:(Number.isFinite(+m[key])&&m[key]!=null?+m[key]:null);
+const keys=['ffmi','ffm','smm','torso','armR','armL','legR','legL','fat'];
+const names={ffmi:'FFMI',ffm:'Fettfreie Masse',smm:'Gesamt-SMM',torso:'Torso',armR:'Arm rechts',armL:'Arm links',legR:'Bein rechts',legL:'Bein links',fat:'KFA'};
+const colors={ffmi:'#5ce0a0',ffm:'#ffdd83',smm:'#65a9ff',torso:'#d4a6ff',armR:'#ffbd69',armL:'#f48fb1',legR:'#5cd7d0',legL:'#d3dd70',fat:'#fa7c7c'};
+const value=(m,key)=>key==='ffmi'?ffmi(m):key==='ffm'?m.weight*(1-m.fat/100):key==='fat'?m.fat:(Number.isFinite(+m[key])&&m[key]!=null?+m[key]:null);
 const selected=Array.isArray(db.selected)?db.selected.filter(x=>keys.includes(x)):['ffmi'];
 $('seriesPicker').innerHTML=keys.map(key=>`<label><input type="checkbox" data-series="${key}" ${selected.includes(key)?'checked':''}><span style="color:${colors[key]}">●</span>${names[key]}</label>`).join('');
 $('xMode').value=db.xMode==='dates'?'dates':'sessions';
@@ -72,9 +72,50 @@ svg+=`<text x="${width/2}" y="${height-5}" text-anchor="middle" class="chart-lab
 $('chart').innerHTML=selected.length?svg:'<p>Wähle mindestens eine Datenreihe aus.</p>';
 $('legend').innerHTML=selected.map(key=>`<span style="--c:${colors[key]}">${names[key]} (${key==='fat'?'%':key==='ffmi'?'Index':'kg'})</span>`).join('');
 $('ceiling').value=db.ceiling;$('horizon').value=db.horizon;
+renderCalculator();
 $('scenario').innerHTML='<p class="foot">Gestrichelte Kurven: exponentielle Szenarien anhand des gesamten Messzeitraums. Gleiche aufeinanderfolgende Werte können durch Rundung entstehen. Für SMM und Körperregionen wird ein <b>frei angenommener</b> Grenzwert von fünfmal dem Zuwachs zwischen erster und letzter verfügbarer Messung über dem aktuellen Wert verwendet. Keine biologische Obergrenze. Jede Reihe wird separat angepasst; ihre Prognosen sind nicht zwingend additiv.</p>';
 const horizons=[0,20,50,100].filter(n=>n<=db.horizon);
 $('forecastTable').innerHTML=`<h2>Gemeinsame Prognosetabelle</h2><div class="table-scroll"><table><thead><tr><th>Zusätzliche Einheiten</th><th>Datum*</th>${selected.map(k=>`<th>${names[k]}${k==='fat'?' (%)':k==='ffmi'?'':' (kg)'}</th>`).join('')}</tr></thead><tbody>${horizons.map(n=>`<tr><td>+${n}</td><td>${freq>0?(()=>{const d=new Date(lastDate+'T12:00:00');d.setDate(d.getDate()+n/freq*7);return d.toLocaleDateString('de-DE')})():'–'}</td>${selected.map(k=>{const f=fits[k];const v=n===0?value(ms.at(-1),k):f?f.predict(f.n+n):null;return `<td>${n>0&&k==='fat'?'–':v==null?'–':fmt(v,k==='fat'?1:2)}</td>`}).join('')}</tr>`).join('')}</tbody></table></div><p class="foot">*Datum aus ${freq} Einheiten/Woche, ab letzter Messung. „–“ bedeutet: keine Prognose möglich oder ausdrücklich ausgeschlossen. Unterschiedliche Skalen teilen sich im Diagramm eine numerische Y-Achse; für präzise Vergleiche einzelne Reihen auswählen.</p>`;
+
+function renderCalculator(){
+ const options=keys.filter(k=>k!=='fat');
+ const current=$('calcMetric').value;
+ $('calcMetric').innerHTML=options.map(k=>`<option value="${k}">${names[k]}${k==='ffmi'?'':' (kg)'}</option>`).join('');
+ $('calcMetric').value=options.includes(current)?current:'ffmi';
+ updateCalculator();
+}
+function updateCalculator(){
+ const metric=$('calcMetric').value,mode=$('calcMode').value,frequency=+db.frequency;
+ $('calcDateWrap').hidden=mode!=='date';$('calcValueWrap').hidden=mode!=='value';
+ const output=$('calcResult');
+ if(!ms.length){output.textContent='Zuerst eine Messung hinzufügen.';return;}
+ const f=fits[metric];
+ if(!f){output.textContent='Für diese Datenreihe ist keine steigende Prognose bestimmbar. Es werden mindestens zwei Messungen mit positivem langfristigem Trend benötigt.';return;}
+ if(frequency===0){output.textContent='Bei 0 Trainingseinheiten pro Woche kann kein Datum berechnet werden. Stelle den Trainingsfrequenz-Slider auf 1–7.';return;}
+ const anchorDate=f.b.date, base=value(f.b,metric),unit=metric==='ffmi'?'':' kg';
+ const formatDate=d=>d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
+ const fromSessions=n=>{const d=new Date(anchorDate+'T12:00:00');d.setDate(d.getDate()+n*7/frequency);return d;};
+ if(mode==='date'){
+   const target=$('calcDate').value;
+   if(!target){output.textContent='Bitte ein Datum wählen.';return;}
+   const n=days(target,anchorDate)*frequency/7;
+   if(n<0){output.textContent='Das Datum liegt vor der letzten Messung. Rückwärtsprognosen sind deaktiviert.';return;}
+   const prediction=f.predict(f.n+n);
+   output.innerHTML=`<strong>${names[metric]}: ${fmt(prediction,2)}${unit}</strong><br><small>Am ${formatDate(new Date(target+'T12:00:00'))} · ca. ${fmt(n,1)} zusätzliche Trainingseinheiten (${frequency}/Woche). Szenario, keine verlässliche individuelle Vorhersage.</small>`;
+ }else{
+   const target=+$('calcValue').value;
+   if(!$('calcValue').value||!Number.isFinite(target)){output.textContent='Bitte einen Zielwert eingeben.';return;}
+   if(target<=base){output.textContent=`Der Zielwert liegt bei oder unter dem letzten Messwert (${fmt(base,2)}${unit}). Eine zukünftige Erreichungszeit lässt sich daraus nicht ableiten.`;return;}
+   if(target>=f.cap){output.textContent=`Der Zielwert liegt bei oder über dem angenommenen Modellgrenzwert (${fmt(f.cap,2)}${unit}). In diesem Szenario wird er nicht erreicht. Der Grenzwert ist hypothetisch.`;return;}
+   const rate=-Math.log((f.cap-value(f.a,metric))/(f.cap-base))/f.n;
+   if(!(rate>0)){output.textContent='Die Umkehrung ist mit diesen Daten nicht berechenbar.';return;}
+   const n=-Math.log((f.cap-target)/(f.cap-base))/rate;
+   if(!Number.isFinite(n)||n>100000){output.textContent='Das Ziel liegt zu nahe am angenommenen Grenzwert für eine sinnvolle Zeitangabe.';return;}
+   const when=fromSessions(n);
+   output.innerHTML=`<strong>Rechnerisch: ${formatDate(when)}</strong><br><small>Ca. ${fmt(n,1)} weitere Trainingseinheiten bei ${frequency}/Woche, um ${fmt(target,2)}${unit} zu erreichen. Nur Modell-Szenario; reale Fortschritte können erheblich abweichen.</small>`;
+ }
+}
+
 $('segments').innerHTML=last&&last.smm!=null?`<p><b>${fmt(last.smm,1)} kg</b> Skelettmuskelmasse (geschätzt)</p><div class="grid">${[['Torso','torso'],['Arm rechts','armR'],['Arm links','armL'],['Bein rechts','legR'],['Bein links','legL']].map(([label,key])=>`<div class="stat"><small>${label}</small><strong>${last[key]==null?'–':fmt(last[key],1)+' kg'}</strong></div>`).join('')}</div>`:'<p>Für die neueste Messung sind keine segmentalen Werte hinterlegt.</p>';
 $('measurementList').innerHTML=`<table><tr><th>Datum</th><th>kg</th><th>KFA</th><th>FFMI</th><th>Einheit Nr.</th><th></th></tr>${ms.slice().reverse().map(m=>`<tr><td>${m.date}</td><td>${fmt(m.weight,1)}</td><td>${fmt(m.fat,1)}%</td><td>${fmt(ffmi(m))}</td><td>${m.session==null?'–':m.session}</td><td><button class="secondary" data-edit-m="${escapeHtml(m.id)}" aria-label="Messung bearbeiten">Bearbeiten</button> <button class="danger" data-delete-m="${escapeHtml(m.id)}" aria-label="Messung löschen">×</button></td></tr>`).join('')}</table>`;
 $('height').value=db.height}
@@ -93,4 +134,5 @@ if(others.some(x=>x.session!=null&&(x.date<m.date&&+x.session>m.session||x.date>
 if(editingMeasurementId){const index=db.measurements.findIndex(x=>x.id===editingMeasurementId);if(index<0)return alert('Messung nicht gefunden.');db.measurements[index]=m;}else db.measurements.push(m);
 resetMeasurementForm();save();});
 document.addEventListener('click',e=>{const edit=e.target.closest('[data-edit-m]');if(edit){editMeasurement(edit.dataset.editM);return;}const del=e.target.closest('[data-delete-m]');if(del&&confirm('Messung wirklich löschen?')){db.measurements=db.measurements.filter(x=>x.id!==del.dataset.deleteM);if(editingMeasurementId===del.dataset.deleteM)resetMeasurementForm();save();}});
-$('saveSettings').onclick=()=>{const h=+$('height').value;if(h<100||h>250)return alert('Ungültige Werte');db.height=h;save()};document.addEventListener('change',e=>{if(e.target.matches('[data-series]')){db.selected=[...document.querySelectorAll('[data-series]:checked')].map(el=>el.dataset.series);save()}});$('xMode').addEventListener('change',e=>{db.xMode=e.target.value;save()});$('frequency').addEventListener('input',e=>{db.frequency=+e.target.value;save()});for(const key of ['ceiling','horizon'])$(key).addEventListener('change',()=>{db[key]=+$(key).value;save()});$('export').onclick=()=>download('hypertrophy-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(db,null,2),'application/json');$('csv').onclick=()=>download('hypertrophy-messungen.csv','Datum,Gewicht_kg,KFA_Prozent,FFMI,SMM_kg\n'+sorted().map(m=>[m.date,m.weight,m.fat,ffmi(m).toFixed(3),m.smm??''].join(',')).join('\n'),'text/csv');$('import').addEventListener('change',async e=>{try{const obj=JSON.parse(await e.target.files[0].text());if(!Array.isArray(obj.measurements)||!obj.measurements.every(valid)||!(obj.height>=100&&obj.height<=250))throw Error('Ungültiges Datenformat');if(confirm('Alle lokalen Daten durch das Backup ersetzen?')){db={...seed(),...obj};save()}}catch(err){alert('Import fehlgeschlagen: '+err.message)}e.target.value=''});$('reset').onclick=()=>{if(confirm('Alle Änderungen löschen und die drei ursprünglichen Messungen wiederherstellen?')){db=seed();save()}};render();if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+$('saveSettings').onclick=()=>{const h=+$('height').value;if(h<100||h>250)return alert('Ungültige Werte');db.height=h;save()};document.addEventListener('change',e=>{if(e.target.matches('[data-series]')){db.selected=[...document.querySelectorAll('[data-series]:checked')].map(el=>el.dataset.series);save()}});$('xMode').addEventListener('change',e=>{db.xMode=e.target.value;save()});$('frequency').addEventListener('input',e=>{db.frequency=+e.target.value;save()});
+for(const id of ['calcMetric','calcMode','calcDate','calcValue'])$(id).addEventListener(id==='calcValue'?'input':'change',()=>render());for(const key of ['ceiling','horizon'])$(key).addEventListener('change',()=>{db[key]=+$(key).value;save()});$('export').onclick=()=>download('hypertrophy-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(db,null,2),'application/json');$('csv').onclick=()=>download('hypertrophy-messungen.csv','Datum,Gewicht_kg,KFA_Prozent,FFMI,Fettfreie_Masse_kg,SMM_kg\n'+sorted().map(m=>[m.date,m.weight,m.fat,ffmi(m).toFixed(3),(m.weight*(1-m.fat/100)).toFixed(3),m.smm??''].join(',')).join('\n'),'text/csv');$('import').addEventListener('change',async e=>{try{const obj=JSON.parse(await e.target.files[0].text());if(!Array.isArray(obj.measurements)||!obj.measurements.every(valid)||!(obj.height>=100&&obj.height<=250))throw Error('Ungültiges Datenformat');if(confirm('Alle lokalen Daten durch das Backup ersetzen?')){db={...seed(),...obj};save()}}catch(err){alert('Import fehlgeschlagen: '+err.message)}e.target.value=''});$('reset').onclick=()=>{if(confirm('Alle Änderungen löschen und die drei ursprünglichen Messungen wiederherstellen?')){db=seed();save()}};render();if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
