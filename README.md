@@ -24,3 +24,8 @@ Das mathematische Sättigungsmodell ist eine **illustrative Szenariofunktion**, 
 
 ## Version 2
 Mehrfachauswahl von FFMI, Gesamt-SMM, Torso, beiden Armen, beiden Beinen und KFA. Segmentale Prognosen benötigen mindestens zwei Messungen mit Werten für die betreffende Region. KFA wird nie prognostiziert. X-Achse umschaltbar (Einheiten/Datum), Frequenzslider 0–7 Einheiten pro Woche. Für GitHub Pages alle Dateien im Repo-Hauptverzeichnis hochladen. Browserdaten werden mit dem v1-Schlüssel weiterverwendet.
+
+## Version 3
+- Historische SMM-Werte ergänzt: 03.08. 33,9 kg (Torso 16,3; Arme je 2,2; Beine je 6,6), 24.08. 34,5 kg (Torso 16,7; Arme je 2,3; Beine je 6,6).
+- Automatische Y-Achsen-Skalierung anhand der ausgewählten Reihen und Prognosen, ohne erzwungenen Nullpunkt.
+- Vorhandene lokale Datensätze werden bei fehlenden historischen Segmentfeldern ergänzt, ohne vorhandene Eingaben zu überschreiben.

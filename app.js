@@ -1,4 +1,10 @@
-'use strict';const KEY='hypertrophy-tracker-v1';const seed=()=>({height:190,baseBefore:11,baseAfter:20,ceiling:23,horizon:160,frequency:5,xMode:'sessions',selected:['ffmi','smm','torso','armR','armL','legR','legL','fat'],measurements:[{id:'m1',date:'2026-08-03',weight:79,fat:17.2,note:'MeScan'},{id:'m2',date:'2026-08-24',weight:80.7,fat:11.9,note:'MeScan'},{id:'m3',date:'2026-11-11',weight:84.7,fat:15,smm:35.2,torso:16.7,armR:2.3,armL:2.4,legR:6.9,legL:6.9,note:'MeScan'}],trainings:[]});let db;try{db=JSON.parse(localStorage.getItem(KEY))||seed()}catch{db=seed()}const $=id=>document.getElementById(id),fmt=(v,d=2)=>Number(v).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d}),ffmi=m=>m.weight*(1-m.fat/100)/(db.height/100)**2,sorted=()=>[...db.measurements].sort((a,b)=>a.date.localeCompare(b.date)),save=()=>{localStorage.setItem(KEY,JSON.stringify(db));render()},escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),valid=m=>m&&/^\d{4}-\d{2}-\d{2}$/.test(m.date)&&Number.isFinite(+m.weight)&&+m.weight>20&&+m.weight<400&&Number.isFinite(+m.fat)&&+m.fat>=1&&+m.fat<=70;
+'use strict';const KEY='hypertrophy-tracker-v1';const seed=()=>({height:190,baseBefore:11,baseAfter:20,ceiling:23,horizon:160,frequency:5,xMode:'sessions',selected:['ffmi','smm','torso','armR','armL','legR','legL','fat'],measurements:[{id:'m1',date:'2026-08-03',weight:79,fat:17.2,smm:33.9,torso:16.3,armR:2.2,armL:2.2,legR:6.6,legL:6.6,note:'MeScan'},{id:'m2',date:'2026-08-24',weight:80.7,fat:11.9,smm:34.5,torso:16.7,armR:2.3,armL:2.3,legR:6.6,legL:6.6,note:'MeScan'},{id:'m3',date:'2026-11-11',weight:84.7,fat:15,smm:35.2,torso:16.7,armR:2.3,armL:2.4,legR:6.9,legL:6.9,note:'MeScan'}],trainings:[]});let db;try{db=JSON.parse(localStorage.getItem(KEY))||seed()}catch{db=seed()}// Upgrade only missing historic segment data; never overwrite user-entered values.
+for(const m of db.measurements||[]){
+ const historic=seed().measurements.find(x=>x.date===m.date);
+ if(historic)for(const field of ['smm','torso','armR','armL','legR','legL'])
+   if(m[field]==null && historic[field]!=null)m[field]=historic[field];
+}
+const $=id=>document.getElementById(id),fmt=(v,d=2)=>Number(v).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d}),ffmi=m=>m.weight*(1-m.fat/100)/(db.height/100)**2,sorted=()=>[...db.measurements].sort((a,b)=>a.date.localeCompare(b.date)),save=()=>{localStorage.setItem(KEY,JSON.stringify(db));render()},escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),valid=m=>m&&/^\d{4}-\d{2}-\d{2}$/.test(m.date)&&Number.isFinite(+m.weight)&&+m.weight>20&&+m.weight<400&&Number.isFinite(+m.fat)&&+m.fat>=1&&+m.fat<=70;
 function trainingCountAfter(date){let base=date>='2026-11-11'?db.baseAfter:date>='2026-08-24'?0:0;return base+db.trainings.filter(t=>t.date>'2026-08-24'&&t.date<=date).length}function model(){const ms=sorted();if(ms.length<2)return null;const a=ms[ms.length-2],b=ms[ms.length-1];let n=db.trainings.filter(t=>t.date>a.date&&t.date<=b.date).length;if(a.date==='2026-08-24'&&b.date==='2026-11-11')n+=db.baseAfter;else if(a.date==='2026-08-03'&&b.date==='2026-08-24')n+=db.baseBefore;else if(a.date==='2026-08-03'&&b.date==='2026-11-11')n+=db.baseBefore+db.baseAfter;else if(a.date==='2026-11-11')n+=db.trainings.filter(t=>t.date>'2026-11-11'&&t.date<=b.date).length;const x=ffmi(a),y=ffmi(b),L=db.ceiling;if(!(n>0&&y>x&&L>y))return {a,b,n,x,y,usable:false};const k=-Math.log((L-y)/(L-x))/n;return {a,b,n,x,y,k,usable:true,predict:u=>L-(L-x)*Math.exp(-k*u)}}
 function render(){const ms=sorted(),last=ms.at(-1),first=ms[0],count=db.baseBefore+db.baseAfter+db.trainings.length;if(last){$('stats').innerHTML=`<div class="stat"><small>Aktueller FFMI</small><strong class="accent">${fmt(ffmi(last))}</strong><small>${escapeHtml(last.date)}</small></div><div class="stat"><small>Trainingseinheiten</small><strong>${count}</strong><small>PPL / sonstige erfasste Einheiten</small></div><div class="stat"><small>Gewicht</small><strong>${fmt(last.weight,1)} kg</strong><small>KFA ${fmt(last.fat,1)} %</small></div><div class="stat"><small>Fettfreie Masse</small><strong>${fmt(last.weight*(1-last.fat/100),1)} kg</strong><small>BIA-Schätzung</small></div>`}else $('stats').innerHTML='<p>Bitte Messung hinzufügen.</p>';
 
@@ -34,7 +40,13 @@ function fit(key){
 }
 const fits=Object.fromEntries(keys.map(key=>[key,fit(key)]));
 const allValues=selected.flatMap(key=>ms.map(m=>value(m,key)).filter(v=>v!=null).concat(fits[key]&&(!dateMode||freq>0)?[fits[key].predict(fits[key].n+db.horizon)]:[]));
-const lo=Math.min(...allValues,0),hi=Math.max(...allValues,1);
+// Auto-fit the Y axis to the selected data (including forecast), with a small margin.
+const finiteValues=allValues.filter(Number.isFinite);
+const rawMin=finiteValues.length?Math.min(...finiteValues):0;
+const rawMax=finiteValues.length?Math.max(...finiteValues):1;
+const spread=Math.max(rawMax-rawMin,Math.abs(rawMax)*0.025,0.15);
+const padding=spread*0.12;
+const lo=rawMin-padding,hi=rawMax+padding;
 const width=760,height=310,left=50,right=20,top=20,bottom=48;
 const x=v=>left+Math.max(0,Math.min(1,v))*(width-left-right);
 const y=v=>top+(1-(v-lo)/Math.max(.001,hi-lo))*(height-top-bottom);
